@@ -394,19 +394,116 @@ canvas.addEventListener("pointerup",onUp);
 canvas.addEventListener("pointercancel",onUp);
 // ---------- shake / water / ad ----------
 var RAINBOW_SHAKE_MAX=3, RAINBOW_SHAKE_CD=20;   // 彩虹球合并送摇一摇: 每局最多 3 次, 且两次之间至少隔 20 秒(否则会被刷成无限摇一摇)
-var SHAKE_MAX=1, WATER_MAX=1, AD_TIME=15, FLOAT_G=1050, SHAKE_A=16000, SHAKE_HZ=26, SHAKE_TIME=2.2, FLOW_TIME=2.6;
+var SHAKE_MAX=1, WATER_MAX=1, FLOAT_G=1050, SHAKE_A=16000, SHAKE_HZ=26, SHAKE_TIME=2.2, FLOW_TIME=2.6;
 var shakeLeft=SHAKE_MAX, waterLeft=WATER_MAX, noLockT=0, floatT=0, shakeEffT=0, shakePhase=0, noOverT=0;
 var adKind=null, adActive=false, adLeft=0;
 var adEl=document.getElementById("ad"), adBtn=document.getElementById("adBtn"), adTextEl=document.getElementById("adText");
 var BTNS=[{id:"shake",x:120,y:FLOOR_Y+6,w:132,h:46},{id:"water",x:260,y:FLOOR_Y+6,w:134,h:46}];
 function unlockAll(){ for(var i=0;i<orbs.length;i++){ if(orbs[i].lock) unlockOrb(orbs[i]); } }
-function doShake(src){ if(paused||over||adActive) return; if(shakeEffT>0) return; if(shakeLeft<=0){ showAd("shake"); return; } shakeLeft--; unlockAll(); shakeEffT=SHAKE_TIME; noLockT=SHAKE_TIME; noOverT=SHAKE_TIME+1.3; shakePhase=0; shakeT=performance.now(); shakeMag=9; snd(300,0.14,"square"); }
-function doWater(){ if(paused||over||adActive) return; if(waterLeft<=0){ showAd("water"); return; } waterLeft--; unlockAll(); floatT=FLOW_TIME; noLockT=FLOW_TIME; noOverT=FLOW_TIME+1.3; snd(720,0.25,"sine"); }
-function showAd(kind){ adKind=kind; adActive=true; adLeft=AD_TIME; adEl.classList.remove("hidden"); adBtn.disabled=true; adBtn.textContent="请稍候…"; adTextEl.textContent="观看完毕即可获得 1 次"+(kind==="shake"?"摇一摇":"倒水"); }
-function updAd(dt){ if(!adActive) return; adLeft-=dt; if(adLeft<=0){ adLeft=0; if(adBtn.disabled){ adBtn.disabled=false; adBtn.textContent="领取奖励"; } } else { adBtn.textContent="请稍候 "+Math.ceil(adLeft)+"s"; } }
-function activateBtn(id){ if(id==="shake") doShake("button"); else if(id==="water") doWater(); }
-function claimAd(){ if(!adActive||adBtn.disabled) return; adEl.classList.add("hidden"); adActive=false; if(adKind==="shake"){ shakeLeft++; doShake("ad"); } else { waterLeft++; doWater(); } }
-adBtn.addEventListener("click",function(e){ e.stopPropagation(); claimAd(); });
+
+// ================= 激励视频广告桥(真广告) =================
+// 用完次数后: 有 SDK 的平台走真实激励视频; 没有 SDK 的平台免费赠送(不再假装看 15 秒)
+// 在各平台后台建好游戏拿到 gameId, 填进 AD_IDS 即可上线
+var AD_IDS={ gamedistribution:"", gamemonetize:"", gamepix:"" };
+var FREE_REFILL_MAX=2;                                  // 无广告平台: 每局每种技能最多免费补几次
+var freeUsed={shake:0,water:0}, toastT=0, toastMsg="";
+var adPlatform="none", adSdkReady=false, adSdkLoading=false, adFinish=null, adWatchdog=null;
+
+function adDetect(){
+ if(typeof window.gdsdk!=="undefined") return "gamedistribution";
+ if(typeof window.GamePixSDK!=="undefined") return "gamepix";
+ if(typeof window.sdk!=="undefined"||typeof window.SDK_OPTIONS!=="undefined") return "gamemonetize";
+ var h=(location.hostname||"");
+ if(/gamedistribution/.test(h)) return "gamedistribution";
+ if(/gamemonetize/.test(h)) return "gamemonetize";
+ if(/gamepix/.test(h)) return "gamepix";
+ return "none"; }
+
+function adInject(src,onload){
+ var s=document.createElement("script"); s.src=src; s.async=true; if(onload) s.onload=onload;
+ document.head.appendChild(s); }
+
+function adLoad(cb){
+ adPlatform=adDetect();
+ if(adPlatform==="none"){ cb(false); return; }
+ if(adSdkReady){ cb(true); return; }
+ if(adSdkLoading){ setTimeout(function(){ cb(adSdkReady); },1500); return; }
+ adSdkLoading=true;
+ var settled=false; function fin(ok){ if(settled) return; settled=true; adSdkReady=!!ok; cb(!!ok); }
+ try{
+  if(adPlatform==="gamedistribution"){
+   window.GD_OPTIONS={ gameId:AD_IDS.gamedistribution, onEvent:function(e){ var n=e&&e.name;
+    if(n==="SDK_READY") fin(true);
+    else if(n==="SDK_GAME_START"){ if(adFinish) adFinish(true); }
+    else if(n==="SDK_REWARDED_WATCH_COMPLETE"){ if(adFinish) adFinish(true); } }};
+   adInject("https://html5.api.gamedistribution.com/main.min.js");
+  } else if(adPlatform==="gamepix"){
+   adInject("https://integration.gamepix.com/sdk/v3/gamepix.sdk.js", function(){
+    try{ window.GamePixSDK.init().then(function(){ fin(true); }).catch(function(){ fin(false); }); }catch(e){ fin(false); } });
+  } else {
+   window.SDK_OPTIONS={ gameId:AD_IDS.gamemonetize, onEvent:function(e){ var n=e&&e.name;
+    if(n==="SDK_READY") fin(true);
+    else if(n==="SDK_GAME_START"){ if(adFinish) adFinish(true); } }};
+   adInject("https://api.gamemonetize.com/sdk.js");
+  }
+ }catch(e){ fin(false); }
+ setTimeout(function(){ fin(false); }, 7000);
+}
+
+function adRewarded(grant){
+ adLoad(function(ok){
+  if(!ok){ grant(false); return; }
+  var done=false;
+  adFinish=function(d){ if(done) return; done=true; adFinish=null; if(adWatchdog){ clearTimeout(adWatchdog); adWatchdog=null; } grant(!!d); };
+  adWatchdog=setTimeout(function(){ if(!done){ done=true; adFinish=null; grant(true); } }, 90000);
+  try{
+   if(adPlatform==="gamedistribution"){
+    var p=window.gdsdk.preloadAd("rewarded");
+    if(p&&p.then){ p.then(function(){ window.gdsdk.showAd("rewarded"); }).catch(function(){ if(adFinish) adFinish(true); }); }
+    else { window.gdsdk.showAd("rewarded"); }
+   } else if(adPlatform==="gamepix"){
+    var q=window.GamePixSDK.showAd("rewarded");
+    if(q&&q.then){ q.then(function(){ if(adFinish) adFinish(true); }).catch(function(){ if(adFinish) adFinish(true); }); }
+   } else {
+    if(window.sdk&&typeof window.sdk.showAd==="function") window.sdk.showAd();
+    else if(window.sdk&&typeof window.sdk.showBanner==="function"){ window.sdk.showBanner(); setTimeout(function(){ if(adFinish) adFinish(true); },1500); }
+    else { if(adFinish) adFinish(false); }
+   }
+  }catch(e){ if(adFinish) adFinish(false); }
+ });
+}
+
+function toast(msg){ toastT=performance.now(); toastMsg=msg; }
+function doShakeNow(){ unlockAll(); shakeEffT=SHAKE_TIME; noLockT=SHAKE_TIME; noOverT=SHAKE_TIME+1.3; shakePhase=0; shakeT=performance.now(); shakeMag=9; snd(300,0.14,"square"); }
+function doWaterNow(){ unlockAll(); floatT=FLOW_TIME; noLockT=FLOW_TIME; noOverT=FLOW_TIME+1.3; snd(720,0.25,"sine"); }
+
+function requestUse(kind){
+ if(paused||over||adActive) return;
+ if(kind==="shake"&&shakeEffT>0) return;
+ var left=(kind==="shake")?shakeLeft:waterLeft;
+ if(left>0){ if(kind==="shake"){ shakeLeft--; doShakeNow(); } else { waterLeft--; doWaterNow(); } return; }
+ if(adPlatform==="none") adPlatform=adDetect();
+ if(adPlatform==="none"){
+  if(freeUsed[kind]<FREE_REFILL_MAX){ freeUsed[kind]++;
+   if(kind==="shake"){ shakeLeft++; doShakeNow(); } else { waterLeft++; doWaterNow(); }
+   toast("本平台暂无广告 · 免费赠送 1 次"); }
+  else { toast("技能已用完(本平台暂无广告)"); }
+  return; }
+ adKind=kind; adActive=true; adEl.classList.remove("hidden");
+ adBtn.disabled=true; adBtn.textContent="广告加载中…";
+ adTextEl.textContent="看完广告即可获得 1 次「"+(kind==="shake"?"摇一摇":"倒水")+"」";
+ adRewarded(function(done){
+  adActive=false; adEl.classList.add("hidden"); adBtn.disabled=false;
+  if(done){ if(kind==="shake"){ shakeLeft++; doShakeNow(); } else { waterLeft++; doWaterNow(); } }
+  else { toast("广告加载失败,请稍后再试"); }
+ });
+}
+
+function doShake(src){ requestUse("shake"); }
+function doWater(){ requestUse("water"); }
+function updAd(dt){ if(!adActive) return; adLeft=(adLeft||0)+dt; adBtn.textContent="广告加载中…"; }
+function activateBtn(id){ if(id==="shake") requestUse("shake"); else if(id==="water") requestUse("water"); }
+adBtn.addEventListener("click",function(e){ e.stopPropagation(); });
 
 // ---------- simple sound ----------
 var actx=null; function snd(f,d,t){ try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); var o=actx.createOscillator(),g=actx.createGain(); o.type=t||"sine"; o.frequency.value=f; g.gain.value=0.04; o.connect(g); g.connect(actx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d); o.stop(actx.currentTime+d);}catch(err){} }
@@ -463,6 +560,11 @@ function render(now){
  // particles
  for(var k=0;k<parts.length;k++){ var p=parts[k]; ctx.globalAlpha=Math.max(0,p.life/p.max); ctx.fillStyle=p.c;
   ctx.fillRect(p.x-p.s/2,p.y-p.s/2,p.s,p.s); } ctx.globalAlpha=1;
+ // generic toast (无广告平台提示等)
+ if(toastT>0){ var tl=(performance.now()-toastT)/1000; if(tl<3.0){ var ta=1-tl/3.0;
+  ctx.save(); ctx.globalAlpha=ta; ctx.textAlign="center"; ctx.font="bold 14px sans-serif";
+  ctx.fillStyle="rgba(20,20,50,.55)"; roundRect(58,96,LOG_W-116,30,15); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.fillText(toastMsg,LOG_W/2,116); ctx.restore(); } }
  // rainbow reward toast
  if(rainbowT>0){ var rl=(performance.now()-rainbowT)/1000; if(rl<1.7){ var ra=1-rl/1.7;
   ctx.save(); ctx.globalAlpha=ra; ctx.textAlign="center";
@@ -481,7 +583,7 @@ function render(now){
  ctx.textAlign="left"; ctx.fillStyle="#8a76c8"; ctx.font="bold 9px sans-serif"; ctx.fillText("分数",18,FLOOR_Y+21);
  ctx.fillStyle="#4a34a0"; ctx.font="bold 17px sans-serif"; ctx.fillText(String(score),18,FLOOR_Y+41);
  ctx.fillStyle="#a99ad8"; ctx.font="bold 9px sans-serif"; ctx.fillText("最高 "+best,64,FLOOR_Y+21);
- ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v26",110,FLOOR_Y+51);
+ ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v27",110,FLOOR_Y+51);
  ctx.restore();
  drawButtons();
 

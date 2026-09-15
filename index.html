@@ -404,7 +404,7 @@ function unlockAll(){ for(var i=0;i<orbs.length;i++){ if(orbs[i].lock) unlockOrb
 // ================= 激励视频广告桥(真广告) =================
 // 用完次数后: 有 SDK 的平台走真实激励视频; 没有 SDK 的平台免费赠送(不再假装看 15 秒)
 // 在各平台后台建好游戏拿到 gameId, 填进 AD_IDS 即可上线
-var AD_IDS={ gamedistribution:"", gamemonetize:"86422", gamepix:"" };
+var AD_IDS={ gamedistribution:"", gamemonetize:"4ni0yul5iz3xbs15et0snspo0zymz0gr", gamepix:"" };
 var FREE_REFILL_MAX=2;                                  // 无广告平台: 每局每种技能最多免费补几次
 var freeUsed={shake:0,water:0}, toastT=0, toastMsg="";
 var adPlatform="none", adSdkReady=false, adSdkLoading=false, adFinish=null, adWatchdog=null;
@@ -452,7 +452,8 @@ function adLoad(cb){
 
 function adRewarded(grant){
  adLoad(function(ok){
-  if(!ok){ grant(false); return; }
+  if(!ok){ adEl.classList.add("hidden"); grant(false); return; }
+  adEl.classList.add("hidden");   // 关键: 把我们的遮罩让开, 否则会盖住 SDK 的广告层(表现为整屏黑)
   var done=false;
   adFinish=function(d){ if(done) return; done=true; adFinish=null; if(adWatchdog){ clearTimeout(adWatchdog); adWatchdog=null; } grant(!!d); };
   adWatchdog=setTimeout(function(){ if(!done){ done=true; adFinish=null; grant(true); } }, 90000);
@@ -585,7 +586,7 @@ function render(now){
  ctx.textAlign="left"; ctx.fillStyle="#8a76c8"; ctx.font="bold 9px sans-serif"; ctx.fillText("分数",18,FLOOR_Y+21);
  ctx.fillStyle="#4a34a0"; ctx.font="bold 17px sans-serif"; ctx.fillText(String(score),18,FLOOR_Y+41);
  ctx.fillStyle="#a99ad8"; ctx.font="bold 9px sans-serif"; ctx.fillText("最高 "+best,64,FLOOR_Y+21);
- ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v29",110,FLOOR_Y+51);
+ ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v30",110,FLOOR_Y+51);
  ctx.restore();
  drawButtons();
 

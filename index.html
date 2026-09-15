@@ -482,7 +482,6 @@ function requestUse(kind){
  if(kind==="shake"&&shakeEffT>0) return;
  var left=(kind==="shake")?shakeLeft:waterLeft;
  if(left>0){ if(kind==="shake"){ shakeLeft--; doShakeNow(); } else { waterLeft--; doWaterNow(); } return; }
- if(adPlatform==="none") adPlatform=adDetect();
  if(adPlatform==="none"){
   if(freeUsed[kind]<FREE_REFILL_MAX){ freeUsed[kind]++;
    if(kind==="shake"){ shakeLeft++; doShakeNow(); } else { waterLeft++; doWaterNow(); }
@@ -499,6 +498,9 @@ function requestUse(kind){
  });
 }
 
+// 页面加载时就认出平台并预载 SDK —— 否则第一次点击会因为 SDK 还没到而误判成"无广告"
+adPlatform=adDetect();
+if(adPlatform!=="none"){ adLoad(function(){}); }
 function doShake(src){ requestUse("shake"); }
 function doWater(){ requestUse("water"); }
 function updAd(dt){ if(!adActive) return; adLeft=(adLeft||0)+dt; adBtn.textContent="广告加载中…"; }
@@ -583,7 +585,7 @@ function render(now){
  ctx.textAlign="left"; ctx.fillStyle="#8a76c8"; ctx.font="bold 9px sans-serif"; ctx.fillText("分数",18,FLOOR_Y+21);
  ctx.fillStyle="#4a34a0"; ctx.font="bold 17px sans-serif"; ctx.fillText(String(score),18,FLOOR_Y+41);
  ctx.fillStyle="#a99ad8"; ctx.font="bold 9px sans-serif"; ctx.fillText("最高 "+best,64,FLOOR_Y+21);
- ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v28",110,FLOOR_Y+51);
+ ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v29",110,FLOOR_Y+51);
  ctx.restore();
  drawButtons();
 

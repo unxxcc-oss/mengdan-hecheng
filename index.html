@@ -37,7 +37,7 @@
  <h1>🥚 萌蛋合成</h1>
  <p>拖动瞄准 · 松手掉落，相同颜色的蛋相碰即升级！</p>
  <button id="startBtn">开始游戏</button>
- <div id="tip">别让蛋堆超过顶部红线 ✯ 分数越高、出球越大越难堆<br>彩虹球合并送 1 次「摇一摇」·「摇一摇」/「倒水」每局各 1 次 · v26</div>
+ <div id="tip">别让蛋堆超过顶部红线 ✯ 分数越高、出球越大越难堆<br>彩虹球合并送 1 次「摇一摇」·「摇一摇」/「倒水」每局各 1 次 · v33</div>
 </div>
 <div id="ad" class="hidden">
  <div class="adbox">
@@ -99,16 +99,58 @@ var overlay=document.getElementById("overlay");
 var startBtn=document.getElementById("startBtn");
 var dpr=Math.min(window.devicePixelRatio||1,2);
 
-function resize(){
- var maxW=Math.max(120,window.innerWidth-16), maxH=Math.max(200,window.innerHeight-16);
- var cssW=Math.min(maxW,480), cssH=cssW*(LOG_H/LOG_W);
- if(cssH>maxH){ cssH=maxH; cssW=cssH*(LOG_W/LOG_H); }   // always keep the 400:720 ratio (no stretching)
- canvas.style.width=cssW+"px";
- canvas.style.height=cssH+"px";
- canvas.width=Math.round(cssW*dpr);
- canvas.height=Math.round(cssH*dpr);
+// ---------- 机型自适应: 铺满整屏 + 避开刘海/灵动岛 + 舞台贴底 ----------
+var VIEW={s:1,x:0,y:0,full:false,ox:"#9AE0FF",ob:"#74C44E"};
+function safeInset(){
+ try{
+  var d=document.createElement("div");
+  d.style.cssText="position:fixed;left:-9999px;top:0;width:0;height:0;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);";
+  document.body.appendChild(d);
+  var cs=getComputedStyle(d);
+  var v={t:parseFloat(cs.paddingTop)||0,r:parseFloat(cs.paddingRight)||0,b:parseFloat(cs.paddingBottom)||0,l:parseFloat(cs.paddingLeft)||0};
+  if(d.parentNode) d.parentNode.removeChild(d);
+  return v;
+ }catch(e){ return {t:0,r:0,b:0,l:0}; }
 }
+function sizeCanvas(){
+ var ww=Math.max(1,window.innerWidth), wh=Math.max(1,window.innerHeight);
+ var si=safeInset(), AR=LOG_H/LOG_W;
+ var fitW=ww/LOG_W, fitH=(wh-si.t-si.b)/LOG_H;
+ if(fitW<=fitH){
+  // 竖屏手机: 画布铺满整屏; 舞台按宽度缩放, 底边贴齐底部安全区, 上方多出来的是天空
+  VIEW.full=true; VIEW.s=fitW;
+  VIEW.x=(ww-LOG_W*VIEW.s)/2;
+  VIEW.y=wh-si.b-LOG_H*VIEW.s;
+  if(VIEW.y<si.t){ VIEW.s=fitH; VIEW.x=(ww-LOG_W*VIEW.s)/2; VIEW.y=wh-si.b-LOG_H*VIEW.s; }
+  canvas.style.width=ww+"px"; canvas.style.height=wh+"px";
+  canvas.style.borderRadius="0"; canvas.style.boxShadow="none";
+  canvas.width=Math.round(ww*dpr); canvas.height=Math.round(wh*dpr);
+ } else {
+  // 宽屏 / 桌面 / 横屏: 保持 400:720 卡片, 页面底色自然留边
+  VIEW.full=false;
+  var maxW=Math.max(120,ww-16), maxH=Math.max(200,wh-16);
+  var cssW=Math.min(maxW,480), cssH=cssW*AR;
+  if(cssH>maxH){ cssH=maxH; cssW=cssH/AR; }
+  VIEW.s=cssW/LOG_W; VIEW.x=0; VIEW.y=0;
+  canvas.style.width=cssW+"px"; canvas.style.height=cssH+"px";
+  canvas.style.borderRadius="18px"; canvas.style.boxShadow="0 12px 40px rgba(0,0,0,.25)";
+  canvas.width=Math.round(cssW*dpr); canvas.height=Math.round(cssH*dpr);
+ }
+}
+function setView(shx,shy){
+ var k=VIEW.s*dpr;
+ ctx.setTransform(k,0,0,k, VIEW.x*dpr+(shx||0), VIEW.y*dpr+(shy||0));
+}
+function paintOverscan(){
+ if(!VIEW.full) return;
+ ctx.setTransform(1,0,0,1,0,0);
+ ctx.fillStyle=VIEW.ox; ctx.fillRect(0,0,canvas.width,canvas.height);
+ var bot=Math.floor(VIEW.y*dpr+LOG_H*VIEW.s*dpr);
+ if(canvas.height>bot){ ctx.fillStyle=VIEW.ob; ctx.fillRect(0,bot,canvas.width,canvas.height-bot); }
+}
+function resize(){ sizeCanvas(); }
 window.addEventListener("resize",resize);
+window.addEventListener("orientationchange",function(){ setTimeout(resize,220); });
 resize();
 
 // ---------- background (bright, lively) drawn once ----------
@@ -138,6 +180,8 @@ function drawBackground(){
  bx.fillStyle="rgba(255,255,255,.5)";
  for(var j=0;j<26;j++){ bx.beginPath(); bx.arc((j*97%LOG_W),(FLOOR_Y+8+(j*53)%(LOG_H-FLOOR_Y-6)),1.6,0,Math.PI*2); bx.fill(); }
  if(bgImg){ try{ var iw=bgImg.naturalWidth||bgImg.width||480, ih=bgImg.naturalHeight||bgImg.height||864; var sc=Math.max(LOG_W/iw,LOG_H/ih); var dw=iw*sc, dh=ih*sc; bx.drawImage(bgImg,(LOG_W-dw)/2,(LOG_H-dh)/2,dw,dh); }catch(err){} } // aspect-preserving cover: any image size, never stretched
+ try{ var _ovt=bx.getImageData(2,0,1,1).data, _ovb=bx.getImageData(2,LOG_H-1,1,1).data;
+  VIEW.ox="rgb("+_ovt[0]+","+_ovt[1]+","+_ovt[2]+")"; VIEW.ob="rgb("+_ovb[0]+","+_ovb[1]+","+_ovb[2]+")"; }catch(e){}
 }
 drawBackground();
 
@@ -381,7 +425,7 @@ var now=performance.now(), rest=0; for(var i=0;i<orbs.length;i++){ var o=orbs[i]
 
 // ---------- input ----------
 function ptLogical(e){ var r=canvas.getBoundingClientRect(); var t=e.touches?e.touches[0]:e;
- return { x:(t.clientX-r.left)*(LOG_W/r.width), y:(t.clientY!=null?(t.clientY-r.top)*(LOG_H/r.height):-1) }; }
+ return { x:(t.clientX-r.left-VIEW.x)/VIEW.s, y:(t.clientY!=null?(t.clientY-r.top-VIEW.y)/VIEW.s:-1) }; }
 function clampAim(x){ return Math.max(R[lastSpawnTier]+MARGIN,Math.min(LOG_W-R[lastSpawnTier]-MARGIN,x)); }
 var pressBtn=null;
 function hitBtn(p){ for(var i=0;i<BTNS.length;i++){ var b=BTNS[i]; if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h) return b.id; } return null; }
@@ -583,11 +627,12 @@ function drawLevel(){
  ctx.restore();
 }
 function render(now){
- ctx.setTransform(canvas.width/LOG_W,0,0,canvas.height/LOG_H,0,0);
+ paintOverscan();
+ setView();
  ctx.drawImage(bgCanvas,0,0);
  // shake
  if((shakeT>0 && now-shakeT<180)||noLockT>0){ var smg=(noLockT>0?9:shakeMag); var sx=(Math.random()-0.5)*smg*0.5; var sy=(shakeEffT>0?Math.sin(now*0.045)*smg:(Math.random()-0.5)*smg);
-   ctx.setTransform(canvas.width/LOG_W,0,0,canvas.height/LOG_H,sx,sy); ctx.drawImage(bgCanvas,0,0); ctx.setTransform(canvas.width/LOG_W,0,0,canvas.height/LOG_H,0,0); }
+   setView(sx,sy); ctx.drawImage(bgCanvas,0,0); setView(); }
  // danger line
  ctx.save(); ctx.strokeStyle="rgba(230,70,90,.85)"; ctx.lineWidth=3; ctx.setLineDash([10,8]);
  ctx.beginPath(); ctx.moveTo(0,DANGER_Y); ctx.lineTo(LOG_W,DANGER_Y); ctx.stroke(); ctx.restore();
@@ -628,7 +673,7 @@ function render(now){
  ctx.textAlign="left"; ctx.fillStyle="#8a76c8"; ctx.font="bold 9px sans-serif"; ctx.fillText("分数",18,FLOOR_Y+21);
  ctx.fillStyle="#4a34a0"; ctx.font="bold 17px sans-serif"; ctx.fillText(String(score),18,FLOOR_Y+41);
  ctx.fillStyle="#a99ad8"; ctx.font="bold 9px sans-serif"; ctx.fillText("最高 "+best,64,FLOOR_Y+21);
- ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v32",110,FLOOR_Y+51);
+ ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v33",110,FLOOR_Y+51);
  ctx.restore();
  drawButtons();
 

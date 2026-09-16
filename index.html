@@ -446,10 +446,21 @@ function adLoad(cb){
      fin(true);
     }catch(e){ fin(false); } });
   } else {
-   window.SDK_OPTIONS={ gameId:AD_IDS.gamemonetize, onEvent:function(e){ var n=e&&e.name;
+   // GameMonetize: 平台宿主(html5.gamemonetize.co)已经注入过 api.gamemonetize.com/sdk.js 并设好了 SDK_OPTIONS。
+   // 再无脑注入一次 = 重复加载 + 覆盖 SDK_OPTIONS, 会破坏广告与统计 -> 已存在就只把我们的 onEvent 链上去。
+   var gmEvt=function(e){ var n=e&&e.name;
     if(n==="SDK_READY") fin(true);
-    else if(n==="SDK_GAME_START"){ if(adFinish) adFinish(true); } }};
-   adInject("https://api.gamemonetize.com/sdk.js");
+    else if(n==="SDK_GAME_START"){ if(adFinish) adFinish(true); } };
+   if(window.sdk){
+    var gmOpts=window.SDK_OPTIONS||{}; var gmPrev=gmOpts.onEvent;
+    gmOpts.gameId=gmOpts.gameId||AD_IDS.gamemonetize;
+    gmOpts.onEvent=function(e){ try{ if(gmPrev) gmPrev(e); }catch(x){} gmEvt(e); };
+    window.SDK_OPTIONS=gmOpts;
+    fin(true);
+   } else {
+    window.SDK_OPTIONS={ gameId:AD_IDS.gamemonetize, onEvent:gmEvt };
+    adInject("https://api.gamemonetize.com/sdk.js");
+   }
   }
  }catch(e){ fin(false); }
  setTimeout(function(){ fin(false); }, 7000);
@@ -617,7 +628,7 @@ function render(now){
  ctx.textAlign="left"; ctx.fillStyle="#8a76c8"; ctx.font="bold 9px sans-serif"; ctx.fillText("分数",18,FLOOR_Y+21);
  ctx.fillStyle="#4a34a0"; ctx.font="bold 17px sans-serif"; ctx.fillText(String(score),18,FLOOR_Y+41);
  ctx.fillStyle="#a99ad8"; ctx.font="bold 9px sans-serif"; ctx.fillText("最高 "+best,64,FLOOR_Y+21);
- ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v31",110,FLOOR_Y+51);
+ ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v32",110,FLOOR_Y+51);
  ctx.restore();
  drawButtons();
 

@@ -242,7 +242,7 @@ function maxSpawnTier(){ return spawnHi; }   // level-driven natural drop cap
 function spawnOrb(i,x,y){ var r=R[i]; var m=r*r; var I=0.5*m*r*r; _asleep=0; _calmCount=0; orbs.push({cid:++_cidCounter,i:i,x:x,y:y,vx:0,vy:0,w:0,a:0,r:r,born:performance.now(),pop:1,slow:0,lock:0,mass:m,imass:1/m,inertia:I,inertiainv:1/I}); }
 
 function resetGame(){ orbs=[]; parts=[]; score=0; maxTier=0; paused=false; over=false;
- LV=0; applyLevel(0,true); lvFlashT=0; lvFlashLv=0;
+ LV=0; applyLevel(0,true); lvFlashT=0; lvFlashLv=0; freeUsed={shake:0,water:0}; rainbowGiven=0; gpxReport(0);
  aimX=LOG_W/2; lastSpawnTier=nextTier(); odTimer=0; rainbowGiven=0; rainbowLastT=-1e9; window.__OD=0; shakeLeft=SHAKE_MAX; waterLeft=WATER_MAX; noLockT=0; floatT=0; shakeEffT=0; shakePhase=0; noOverT=0; adActive=false; adEl.classList.add("hidden"); }
 
 // ---------- physics (identical solver to original) ----------
@@ -356,14 +356,14 @@ function tryMerge(){ var now=performance.now(); var removed=[];
    var A=orbs[i],B=orbs[j]; if(removed[i]||removed[j]) continue;
    if(!canMerge(A,B,now)) continue;
    var ddx=B.x-A.x,ddy=B.y-A.y; if(Math.hypot(ddx,ddy)>(A.r+B.r)+1.5) continue;
-   if(A.i>=9){ removed[i]=true; removed[j]=true; score+=2000; shakeT=performance.now(); shakeMag=2.5;
+   if(A.i>=9){ removed[i]=true; removed[j]=true; score+=2000; gpxReport(1); shakeT=performance.now(); shakeMag=2.5;
     var _rnow=performance.now(), _got=0;
     if(shakeLeft<1 && rainbowGiven<RAINBOW_SHAKE_MAX && (_rnow-rainbowLastT)>RAINBOW_SHAKE_CD*1000){ shakeLeft++; rainbowGiven++; rainbowLastT=_rnow; _got=1; }
     rainbowT=_rnow; rainbowGot=_got; rainbowX=Math.max(96,Math.min(LOG_W-96,(A.x+B.x)/2)); rainbowY=Math.min(A.y,B.y);
     burst(A.x,A.y,"#FF7EB3"); burst(B.x,B.y,"#FF7EB3"); burst(A.x,A.y,"#FFF3B8"); burst(B.x,B.y,"#FFF3B8"); continue; }
    var ni=A.i+1; var mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
    var nr=R[ni],ny=my;for(var g=0;g<400&&ny>nr;g++){var ok=true;for(var o=0;o<orbs.length;o++){if(o===i||o===j)continue;var Pp=orbs[o];if(Math.hypot(mx-Pp.x,ny-Pp.y)<nr+Pp.r+0.6){ok=false;break;}}if(ok)break;ny-=1;}spawnOrb(ni,mx,ny); 
-   score += ni*10; if(ni>maxTier) maxTier=ni;
+   score += ni*10; if(ni>maxTier) maxTier=ni; gpxReport(0);
    shakeT=performance.now(); shakeMag=Math.min(2.5,0.8+ni*0.25);
    burst(mx,my,BOT[A.i]);
    removed[i]=true; removed[j]=true;
@@ -410,13 +410,13 @@ var freeUsed={shake:0,water:0}, toastT=0, toastMsg="";
 var adPlatform="none", adSdkReady=false, adSdkLoading=false, adFinish=null, adWatchdog=null;
 
 function adDetect(){
- if(typeof window.gdsdk!=="undefined") return "gamedistribution";
- if(typeof window.GamePixSDK!=="undefined") return "gamepix";
- if(typeof window.sdk!=="undefined"||typeof window.SDK_OPTIONS!=="undefined") return "gamemonetize";
- var h=(location.hostname||"");
+ var h=(location.hostname||"")+" "+(document.referrer||"");
  if(/gamedistribution/.test(h)) return "gamedistribution";
  if(/gamemonetize/.test(h)) return "gamemonetize";
  if(/gamepix/.test(h)) return "gamepix";
+ if(typeof window.gdsdk!=="undefined") return "gamedistribution";
+ if(typeof window.sdk!=="undefined"||typeof window.SDK_OPTIONS!=="undefined") return "gamemonetize";
+ if(typeof window.GamePix!=="undefined") return "gamepix";
  return "none"; }
 
 function adInject(src,onload){
@@ -438,8 +438,13 @@ function adLoad(cb){
     else if(n==="SDK_REWARDED_WATCH_COMPLETE"){ if(adFinish) adFinish(true); } }};
    adInject("https://html5.api.gamedistribution.com/main.min.js");
   } else if(adPlatform==="gamepix"){
+   // GamePix SDK v3: 全局对象是 GamePix(不是 GamePixSDK), 且必须先调 GamePix.loaded()
    adInject("https://integration.gamepix.com/sdk/v3/gamepix.sdk.js", function(){
-    try{ window.GamePixSDK.init().then(function(){ fin(true); }).catch(function(){ fin(false); }); }catch(e){ fin(false); } });
+    try{
+     if(!window.GamePix){ fin(false); return; }
+     if(typeof window.GamePix.loaded==="function") window.GamePix.loaded();
+     fin(true);
+    }catch(e){ fin(false); } });
   } else {
    window.SDK_OPTIONS={ gameId:AD_IDS.gamemonetize, onEvent:function(e){ var n=e&&e.name;
     if(n==="SDK_READY") fin(true);
@@ -463,8 +468,13 @@ function adRewarded(grant){
     if(p&&p.then){ p.then(function(){ window.gdsdk.showAd("rewarded"); }).catch(function(){ if(adFinish) adFinish(true); }); }
     else { window.gdsdk.showAd("rewarded"); }
    } else if(adPlatform==="gamepix"){
-    var q=window.GamePixSDK.showAd("rewarded");
-    if(q&&q.then){ q.then(function(){ if(adFinish) adFinish(true); }).catch(function(){ if(adFinish) adFinish(true); }); }
+    // GamePix SDK v3 激励视频; 广告未填充时(beta 期常见)免费赠送, 不让玩家白点
+    if(window.GamePix&&typeof window.GamePix.rewardAd==="function"){
+     window.GamePix.rewardAd().then(function(res){
+      if(res&&res.success){ if(adFinish) adFinish(true); }
+      else { toast("广告暂不可用 · 免费赠送 1 次"); if(adFinish) adFinish(true); }
+     }).catch(function(){ toast("广告暂不可用 · 免费赠送 1 次"); if(adFinish) adFinish(true); });
+    } else { if(adFinish) adFinish(false); }
    } else {
     if(window.sdk&&typeof window.sdk.showAd==="function") window.sdk.showAd();
     else if(window.sdk&&typeof window.sdk.showBanner==="function"){ window.sdk.showBanner(); setTimeout(function(){ if(adFinish) adFinish(true); },1500); }
@@ -475,6 +485,27 @@ function adRewarded(grant){
 }
 
 function toast(msg){ toastT=performance.now(); toastMsg=msg; }
+
+// ================= GamePix SDK v3 数据上报 =================
+// GamePix 要求: 分数/关卡只能传正整数, 且必须先 GamePix.loaded()
+function gpxReport(happy){
+ try{
+  if(!window.GamePix) return;
+  var sc=Math.max(0,Math.round(score||0));
+  if(typeof window.GamePix.updateScore==="function") window.GamePix.updateScore(sc+1);
+  var lv=(typeof levelOf==="function"?levelOf(score):0)+1;
+  if(typeof window.GamePix.updateLevel==="function") window.GamePix.updateLevel(Math.max(1,lv));
+  if(happy&&typeof window.GamePix.happyMoment==="function") window.GamePix.happyMoment();
+ }catch(e){}
+}
+
+// GamePix 提交指南 #9: 禁止空格/方向键/滚轮导致页面滚动
+(function(){
+ try{
+  window.addEventListener("keydown",function(e){ if(e.key==="ArrowUp"||e.key==="ArrowDown"||e.key===" ") e.preventDefault(); },{passive:false});
+  window.addEventListener("wheel",function(e){ e.preventDefault(); },{passive:false});
+ }catch(e){}
+})();
 function doShakeNow(){ unlockAll(); shakeEffT=SHAKE_TIME; noLockT=SHAKE_TIME; noOverT=SHAKE_TIME+1.3; shakePhase=0; shakeT=performance.now(); shakeMag=9; snd(300,0.14,"square"); }
 function doWaterNow(){ unlockAll(); floatT=FLOW_TIME; noLockT=FLOW_TIME; noOverT=FLOW_TIME+1.3; snd(720,0.25,"sine"); }
 
@@ -586,7 +617,7 @@ function render(now){
  ctx.textAlign="left"; ctx.fillStyle="#8a76c8"; ctx.font="bold 9px sans-serif"; ctx.fillText("分数",18,FLOOR_Y+21);
  ctx.fillStyle="#4a34a0"; ctx.font="bold 17px sans-serif"; ctx.fillText(String(score),18,FLOOR_Y+41);
  ctx.fillStyle="#a99ad8"; ctx.font="bold 9px sans-serif"; ctx.fillText("最高 "+best,64,FLOOR_Y+21);
- ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v30",110,FLOOR_Y+51);
+ ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v31",110,FLOOR_Y+51);
  ctx.restore();
  drawButtons();
 

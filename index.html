@@ -145,8 +145,16 @@ function paintOverscan(){
  if(!VIEW.full) return;
  ctx.setTransform(1,0,0,1,0,0);
  ctx.fillStyle=VIEW.ox; ctx.fillRect(0,0,canvas.width,canvas.height);
- var bot=Math.floor(VIEW.y*dpr+LOG_H*VIEW.s*dpr);
- if(canvas.height>bot){ ctx.fillStyle=VIEW.ob; ctx.fillRect(0,bot,canvas.width,canvas.height-bot); }
+ // 上下补条: 取舞台首行/末行的横向纹理纵向拉伸 —— 接缝两侧像素完全一致, 不会有硬边
+ // (之前用单点取色铺满整行: 背景底边横向是渐变的, 只有最左边对得上)
+ var top=Math.round(VIEW.y*dpr), bot=Math.round(VIEW.y*dpr+LOG_H*VIEW.s*dpr);
+ if(top>0) ctx.drawImage(bgCanvas,0,0,LOG_W,1,0,0,canvas.width,top);
+ if(canvas.height>bot){
+  // 镜像底部切片: 接缝处正好是原图最后一行(无缝), 往下自然延续且保留草地纹理, 不会拉出竖条
+  var bh=canvas.height-bot, shh=Math.max(2,Math.min(LOG_H,Math.ceil(bh/(VIEW.s*dpr))));
+  ctx.save(); ctx.translate(0,bot+bh); ctx.scale(1,-1);
+  ctx.drawImage(bgCanvas,0,LOG_H-shh,LOG_W,shh,0,0,canvas.width,bh); ctx.restore();
+ }
 }
 function resize(){ sizeCanvas(); }
 window.addEventListener("resize",resize);
@@ -673,7 +681,7 @@ function render(now){
  ctx.textAlign="left"; ctx.fillStyle="#8a76c8"; ctx.font="bold 9px sans-serif"; ctx.fillText("分数",18,FLOOR_Y+21);
  ctx.fillStyle="#4a34a0"; ctx.font="bold 17px sans-serif"; ctx.fillText(String(score),18,FLOOR_Y+41);
  ctx.fillStyle="#a99ad8"; ctx.font="bold 9px sans-serif"; ctx.fillText("最高 "+best,64,FLOOR_Y+21);
- ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v33",110,FLOOR_Y+51);
+ ctx.textAlign="right"; ctx.fillStyle="rgba(120,100,200,.75)"; ctx.font="bold 8px sans-serif"; ctx.fillText("v35",110,FLOOR_Y+51);
  ctx.restore();
  drawButtons();
 
